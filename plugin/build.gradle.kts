@@ -127,16 +127,12 @@ tasks {
     }
   }
 
-  // Configuration spéciale pour la javadoc avec AAR
+  // Configuration spéciale pour la javadoc avec AAR - Dokka comme générateur par défaut
   dokkaJavadoc.configure {
     dokkaSourceSets {
       named("main") {
         noAndroidSdkLink.set(false)
         includeNonPublic.set(false)
-        val javadocLogo = project.findProperty("javadoc.logo") as String
-        val javadocCopyright = project.findProperty("javadoc.copyright") as String
-        val titleProperty = project.findProperty("title") as String
-
         jdkVersion.set(11)
 
         // Configuration pour simuler les options javadoc
@@ -153,33 +149,27 @@ tasks {
     }
   }
 
-  // Task personnalisée pour créer un JAR des sources (compatible avec AAR)
-  register<Jar>("sourcesJar") {
-    dependsOn("copyLicenseFiles")
-    archiveClassifier.set("sources")
-    from(android.sourceSets.getByName("main").java.srcDirs)
-
-    doFirst { copyLicenseFiles() }
-    manifest {
-      attributes(
-          mapOf(
-              "Implementation-Title" to "${project.findProperty("title") as String} Sources",
-              "Implementation-Version" to project.version))
+  // Configurer Android pour utiliser Dokka pour la javadoc
+  project.afterEvaluate {
+    tasks.withType<Jar>().configureEach {
+      if (name.contains("javadoc", ignoreCase = true)) {
+        dependsOn(dokkaJavadoc)
+        from(dokkaJavadoc.flatMap { it.outputDirectory })
+      }
     }
   }
 
-  // Task personnalisée pour créer un JAR de la javadoc (compatible avec AAR)
-  register<Jar>("javadocJar") {
-    dependsOn(dokkaJavadoc)
-    archiveClassifier.set("javadoc")
-    from(dokkaJavadoc.flatMap { it.outputDirectory })
-
-    doFirst { copyLicenseFiles() }
-    manifest {
-      attributes(
-          mapOf(
-              "Implementation-Title" to "${project.findProperty("title") as String} Documentation",
-              "Implementation-Version" to project.version))
+  // Task personnalisée pour configurer la javadoc générée automatiquement
+  withType<Jar>().configureEach {
+    if (archiveClassifier.get() == "javadoc" || archiveClassifier.get() == "sources") {
+      doFirst { copyLicenseFiles() }
+      manifest {
+        attributes(
+            mapOf(
+                "Implementation-Title" to
+                    "${project.findProperty("title") as String} ${archiveClassifier.get().capitalize()}",
+                "Implementation-Version" to project.version))
+      }
     }
   }
 
@@ -196,9 +186,8 @@ afterEvaluate {
       create<MavenPublication>("release") {
         from(components["release"])
 
-        // Ajout explicite des artifacts sources et javadoc
-        artifact(tasks["sourcesJar"])
-        artifact(tasks["javadocJar"])
+        // Les artifacts sources et javadoc sont automatiquement ajoutés par withSourcesJar() et
+        // withJavadocJar()
 
         pom {
           name.set(project.findProperty("title") as String)
