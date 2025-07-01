@@ -84,7 +84,7 @@ android {
   publishing {
     singleVariant("release") {
       withSourcesJar()
-      withJavadocJar()
+      // Pas de withJavadocJar() car on va le configurer manuellement avec Dokka
     }
   }
 }
@@ -127,7 +127,7 @@ tasks {
     }
   }
 
-  // Configuration spéciale pour la javadoc avec AAR - Dokka comme générateur par défaut
+  // Configuration spéciale pour la javadoc avec AAR - Dokka comme générateur
   dokkaJavadoc.configure {
     dokkaSourceSets {
       named("main") {
@@ -143,31 +143,32 @@ tasks {
       }
     }
 
-    doFirst {
-      println("Generating Javadoc for ${project.name} version ${project.version}")
-      copyLicenseFiles()
+    doFirst { println("Generating Javadoc for ${project.name} version ${project.version}") }
+  }
+
+  // Task personnalisée pour créer un JAR de la javadoc avec Dokka
+  register<Jar>("javadocJar") {
+    dependsOn(dokkaJavadoc)
+    archiveClassifier.set("javadoc")
+    from(dokkaJavadoc.flatMap { it.outputDirectory })
+
+    doFirst { copyLicenseFiles() }
+    manifest {
+      attributes(
+          mapOf(
+              "Implementation-Title" to "${project.findProperty("title") as String} Documentation",
+              "Implementation-Version" to project.version))
     }
   }
 
-  // Configurer Android pour utiliser Dokka pour la javadoc
-  project.afterEvaluate {
-    tasks.withType<Jar>().configureEach {
-      if (name.contains("javadoc", ignoreCase = true)) {
-        dependsOn(dokkaJavadoc)
-        from(dokkaJavadoc.flatMap { it.outputDirectory })
-      }
-    }
-  }
-
-  // Task personnalisée pour configurer la javadoc générée automatiquement
+  // Task personnalisée pour configurer les JARs sources générés automatiquement
   withType<Jar>().configureEach {
-    if (archiveClassifier.get() == "javadoc" || archiveClassifier.get() == "sources") {
+    if (archiveClassifier.get() == "sources") {
       doFirst { copyLicenseFiles() }
       manifest {
         attributes(
             mapOf(
-                "Implementation-Title" to
-                    "${project.findProperty("title") as String} ${archiveClassifier.get().capitalize()}",
+                "Implementation-Title" to "${project.findProperty("title") as String} Sources",
                 "Implementation-Version" to project.version))
       }
     }
@@ -186,8 +187,8 @@ afterEvaluate {
       create<MavenPublication>("release") {
         from(components["release"])
 
-        // Les artifacts sources et javadoc sont automatiquement ajoutés par withSourcesJar() et
-        // withJavadocJar()
+        // Ajout explicite de notre JAR javadoc personnalisé
+        artifact(tasks["javadocJar"])
 
         pom {
           name.set(project.findProperty("title") as String)
